@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { supabase } from '../lib/supabase';
 import { SalesData, FilterOptions, Analytics, ABCAnalysisItem, XYZAnalysisItem, ABCXYZAnalysisItem, FactorAnalysis, StructuralAnalysis } from '../types';
 
 // Новые типы для сортировки
@@ -8,6 +9,7 @@ type SortBy = keyof SalesData | null;
 export const useSalesData = () => {
   const [salesData, setSalesData] = useState<SalesData[]>([]);
   const [filteredData, setFilteredData] = useState<SalesData[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   
   const [filters, setFilters] = useState<FilterOptions>({
     startDate: '',
@@ -20,64 +22,73 @@ export const useSalesData = () => {
   // Состояние для конфигурации сортировки
   const [sortConfig, setSortConfig] = useState<{ key: SortBy, direction: SortDirection }>({ key: null, direction: null });
 
-  const getUserDataKey = (userId: string) => `salesData_${userId}`;
-
-  useEffect(() => {
-    const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
-    if (currentUser.id) {
-      const userDataKey = getUserDataKey(currentUser.id);
-      const savedData = localStorage.getItem(userDataKey);
+  // Загрузка данных пользователя из Supabase
+  const loadUserData = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const { data: { user } } = await supabase.auth.getUser();
       
-      if (savedData) {
-        try {
-          const userData = JSON.parse(savedData);
-          console.log(`useSalesData: Загружены сохраненные данные для пользователя ${currentUser.id}:`, userData.length);
-          setSalesData(userData);
-        } catch (error) {
-          console.error('useSalesData: Ошибка при загрузке данных из localStorage:', error);
-          setSalesData([]);
-        }
-      } else {
-        console.log(`useSalesData: Нет сохраненных данных для пользователя ${currentUser.id}, начинаем с пустого массива`);
+      if (!user) {
+        console.log('Пользователь не авторизован');
         setSalesData([]);
+        return;
       }
-    } else {
-      console.log('useSalesData: Пользователь не авторизован или ID отсутствует, данные не загружаются.');
-      setSalesData([]);
+
+      const { data, error } = await supabase
+        .from('sales_data')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Ошибка загрузки данных:', error);
+        return;
+      }
+
+      console.log(`Загружено ${data?.length || 0} записей из Supabase`);
+      setSalesData(data || []);
+    } catch (error) {
+      console.error('Ошибка при загрузке данных:', error);
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
-  // useMemo для фильтрации данных.
+  // Загружаем данные при монтировании компонента
+  useEffect(() => {
+    loadUserData();
+  }, [loadUserData]);
+
+  // useMemo для фильтрации данных
   const preSortedFilteredData = useMemo(() => {
-    console.log('useSalesData: Применяем фильтры к данным. Исходных данных:', salesData.length);
+    console.log('Применяем фильтры к данным. Исходных данных:', salesData.length);
     let currentFiltered = salesData;
 
     if (filters.startDate) {
       currentFiltered = currentFiltered.filter(item => item.date >= filters.startDate);
-      console.log('useSalesData: После фильтрации по startDate:', currentFiltered.length);
     }
     if (filters.endDate) {
       currentFiltered = currentFiltered.filter(item => item.date <= filters.endDate);
-      console.log('useSalesData: После фильтрации по endDate:', currentFiltered.length);
     }
     if (filters.region) {
-      currentFiltered = currentFiltered.filter(item => item.region.toLowerCase().includes(filters.region.toLowerCase()));
-      console.log('useSalesData: После фильтрации по region:', currentFiltered.length);
+      currentFiltered = currentFiltered.filter(item => 
+        item.region.toLowerCase().includes(filters.region.toLowerCase())
+      );
     }
     if (filters.category) {
-      currentFiltered = currentFiltered.filter(item => item.category.toLowerCase().includes(filters.category.toLowerCase()));
-      console.log('useSalesData: После фильтрации по category:', currentFiltered.length);
+      currentFiltered = currentFiltered.filter(item => 
+        item.category.toLowerCase().includes(filters.category.toLowerCase())
+      );
     }
     if (filters.customerType) {
       currentFiltered = currentFiltered.filter(item => item.customer_type === filters.customerType);
-      console.log('useSalesData: После фильтрации по customerType:', currentFiltered.length);
     }
     
-    console.log('useSalesData: Количество данных после фильтрации (до сортировки):', currentFiltered.length);
+    console.log('Количество данных после фильтрации:', currentFiltered.length);
     return currentFiltered;
   }, [salesData, filters]);
 
-  // useEffect для сортировки отфильтрованных данных.
+  // useEffect для сортировки отфильтрованных данных
   useEffect(() => {
     if (sortConfig.key === null) {
       setFilteredData(preSortedFilteredData);
@@ -109,90 +120,116 @@ export const useSalesData = () => {
         return bStr.localeCompare(aStr);
       }
     });
-    console.log(`useSalesData: Данные отсортированы по ${String(sortConfig.key)} (${sortConfig.direction}).`);
+    
     setFilteredData(sortedArray);
   }, [preSortedFilteredData, sortConfig]);
 
   const updateFilters = useCallback((newFilters: Partial<FilterOptions>) => {
     setFilters(prev => ({ ...prev, ...newFilters }));
-    console.log('useSalesData: Обновлены фильтры:', newFilters);
   }, []);
 
-  const addSalesData = useCallback((newData: SalesData[]) => {
-    console.log('useSalesData: Получены новые данные для добавления:', newData.length);
-    const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
-    
-    let startId = salesData.length > 0 
-      ? Math.max(...salesData.map(item => parseInt(item.id || '0')).filter(id => !isNaN(id))) + 1 
-      : 1;
-    if (isNaN(startId)) startId = 1;
+  const addSalesData = useCallback(async (newData: SalesData[]) => {
+    try {
+      setIsLoading(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        console.error('Пользователь не авторизован');
+        return;
+      }
 
-    const updatedData = newData.map((item, index) => {
-        // Нормализация скидки уже происходит в FileUpload, но проверим еще раз
-        let normalizedDiscount = item.discount; 
+      console.log(`Добавляем ${newData.length} записей в Supabase`);
 
-        if (typeof normalizedDiscount === 'number') {
-            // Если число > 1 (например, 15), считаем это процентом и делим на 100
-            if (normalizedDiscount > 1) {
-                normalizedDiscount = normalizedDiscount / 100; 
-            } 
-            // Если число от 0.01 до 1 (например, 0.1, 0.01, 0.5), считаем это долей и оставляем как есть.
-            // Если discount < 0, то обнуляем
-            if (normalizedDiscount < 0) { 
-                normalizedDiscount = 0;
-            }
-        } else {
-            normalizedDiscount = 0; 
-            console.warn(`useSalesData: Discount value '${item.discount}' is not a number for item`, item);
-        }
+      // Подготавливаем данные для вставки
+      const dataToInsert = newData.map(item => ({
+        user_id: user.id,
+        date: item.date,
+        product_name: item.product_name,
+        product_id: item.product_id,
+        category: item.category,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        revenue: item.revenue,
+        cost_price: item.cost_price,
+        profit: item.profit,
+        profitability: item.profitability,
+        discount: item.discount,
+        vat: item.vat,
+        margin: item.margin,
+        customer_type: item.customer_type,
+        region: item.region,
+        sales_channel: item.sales_channel,
+        shipping_status: item.shipping_status,
+        year: item.year || new Date(item.date).getFullYear()
+      }));
 
-        return {
-            ...item,
-            id: (startId + index).toString(), 
-            product_id: item.product_id || `prod-${startId + index}`,
-            discount: normalizedDiscount 
-        };
-    });
-    
-    const newSalesData = [...salesData, ...updatedData];
-    console.log('useSalesData: Итоговые данные после добавления:', newSalesData.length);
-    setSalesData(newSalesData);
-    
-    if (currentUser.id) {
-      const userDataKey = getUserDataKey(currentUser.id);
-      localStorage.setItem(userDataKey, JSON.stringify(newSalesData));
-      console.log('useSalesData: Данные сохранены в localStorage с ключом:', userDataKey);
+      const { data, error } = await supabase
+        .from('sales_data')
+        .insert(dataToInsert)
+        .select();
+
+      if (error) {
+        console.error('Ошибка при добавлении данных:', error);
+        return;
+      }
+
+      console.log(`Успешно добавлено ${data?.length || 0} записей`);
+      
+      // Перезагружаем данные
+      await loadUserData();
+
+      // Сбрасываем фильтры
+      setFilters({
+        startDate: '',
+        endDate: '',
+        region: '',
+        category: '',
+        customerType: ''
+      });
+    } catch (error) {
+      console.error('Ошибка при добавлении данных:', error);
+    } finally {
+      setIsLoading(false);
     }
+  }, [loadUserData]);
 
-    setFilters({
-      startDate: '',
-      endDate: '',
-      region: '',
-      category: '',
-      customerType: ''
-    });
-    console.log('useSalesData: Фильтры сброшены после добавления новых данных.');
-  }, [salesData]);
+  const clearAllData = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        console.error('Пользователь не авторизован');
+        return;
+      }
 
-  const clearAllData = useCallback(() => {
-    const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
-    setSalesData([]);
-    setFilteredData([]);
-    
-    if (currentUser.id) {
-      const userDataKey = getUserDataKey(currentUser.id);
-      localStorage.removeItem(userDataKey);
-      console.log(`useSalesData: Данные для пользователя ${currentUser.id} удалены из localStorage.`);
+      const { error } = await supabase
+        .from('sales_data')
+        .delete()
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error('Ошибка при удалении данных:', error);
+        return;
+      }
+
+      console.log('Все данные пользователя удалены');
+      setSalesData([]);
+      setFilteredData([]);
+
+      // Сбрасываем фильтры
+      setFilters({
+        startDate: '',
+        endDate: '',
+        region: '',
+        category: '',
+        customerType: ''
+      });
+    } catch (error) {
+      console.error('Ошибка при удалении данных:', error);
+    } finally {
+      setIsLoading(false);
     }
-
-    setFilters({
-      startDate: '',
-      endDate: '',
-      region: '',
-      category: '',
-      customerType: ''
-    });
-    console.log('useSalesData: Все данные и фильтры сброшены.');
   }, []);
 
   const requestSort = useCallback((key: keyof SalesData) => {
@@ -206,7 +243,7 @@ export const useSalesData = () => {
     setSortConfig({ key, direction });
   }, [sortConfig]);
 
-  // --- Ваша логика аналитики (без изменений) ---
+  // Функции аналитики (без изменений)
   const calculateABCAnalysis = (data: SalesData[]): ABCAnalysisItem[] => {
     if (data.length === 0) return [];
     const productRevenue = data.reduce((acc, item) => {
@@ -550,6 +587,7 @@ export const useSalesData = () => {
     salesData,
     filteredData,
     filters,
+    isLoading,
     updateFilters,
     addSalesData,
     clearAllData,

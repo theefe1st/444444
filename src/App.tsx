@@ -13,14 +13,16 @@ import FileUpload from './components/upload/FileUpload';
 import SalesTable from './components/data/SalesTable';
 
 function App() {
-  const { user, isLoading, login, register, logout } = useAuth();
-  const { salesData, filteredData, filters, updateFilters, addSalesData, clearAllData, getAnalytics } = useSalesData();
+  const { user, isLoading: authLoading, login, register, logout } = useAuth();
+  const { salesData, filteredData, filters, isLoading: dataLoading, updateFilters, addSalesData, clearAllData, getAnalytics } = useSalesData();
   
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [activeTab, setActiveTab] = useState('analytics');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  if (isLoading) {
+  const isLoading = authLoading || dataLoading;
+
+  if (authLoading) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
         <div className="text-center">
@@ -157,11 +159,12 @@ function App() {
               <button
                 onClick={() => setShowDeleteConfirm(true)}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
+                disabled={isLoading}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
-                Удалить все данные
+                {isLoading ? 'Удаление...' : 'Удалить все данные'}
               </button>
             </div>
             
@@ -236,16 +239,26 @@ function App() {
                 <button
                   onClick={() => setShowDeleteConfirm(true)}
                   className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
+                  disabled={isLoading}
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                   </svg>
-                  Удалить все данные
+                  {isLoading ? 'Удаление...' : 'Удалить все данные'}
                 </button>
               )}
             </div>
             
             <FileUpload onDataUpload={addSalesData} />
+            
+            {isLoading && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                  <span className="text-blue-800">Сохранение данных в базу...</span>
+                </div>
+              </div>
+            )}
           </div>
         );
 
@@ -290,11 +303,12 @@ function App() {
               <button
                 onClick={() => setShowDeleteConfirm(true)}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
+                disabled={isLoading}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
-                Удалить все данные ({salesData.length} записей)
+                {isLoading ? 'Удаление...' : `Удалить все данные (${salesData.length} записей)`}
               </button>
             </div>
             
@@ -346,13 +360,15 @@ function App() {
             <div className="flex gap-3">
               <button
                 onClick={handleDeleteConfirm}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                disabled={isLoading}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
               >
-                Да, удалить все
+                {isLoading ? 'Удаление...' : 'Да, удалить все'}
               </button>
               <button
                 onClick={() => setShowDeleteConfirm(false)}
-                className="flex-1 px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+                disabled={isLoading}
+                className="flex-1 px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors disabled:opacity-50"
               >
                 Отменить
               </button>
