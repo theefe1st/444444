@@ -152,7 +152,7 @@ function App() {
           <div className="space-y-8">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-bold text-gray-900 mb-2">Анализ продаж</h2>
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">Анализ продаж$</h2>
                 <p className="text-gray-600">Комплексная аналитика и отчетность по продажам</p>
               </div>
               
