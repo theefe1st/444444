@@ -179,7 +179,7 @@ const Charts: React.FC<ChartsProps> = ({ analytics }) => {
       'AY': {
         icon: <Clock className="w-5 h-5 text-yellow-600" />,
         title: 'Важные товары - сезонное планирование',
-        priority: 'Высокий',
+        priority: revenue > 40000 ? 'Критический' : 'Высокий', // Исправлено: теперь приоритет зависит от выручки
         color: 'bg-yellow-50 border-yellow-200',
         reasons: [
           'Высокая доля в выручке, но сезонный характер спроса',
@@ -672,12 +672,12 @@ const Charts: React.FC<ChartsProps> = ({ analytics }) => {
                           </td>
                           <td className="p-2 text-center">
                             <span className={`px-2 py-1 rounded text-xs font-medium ${
-                              item.priority.includes('Критический') ? 'bg-red-100 text-red-800' :
-                              item.priority === 'Высокий' ? 'bg-yellow-100 text-yellow-800' :
-                              item.priority === 'Средний' ? 'bg-blue-100 text-blue-800' :
+                              analysis.priority.includes('Критический') ? 'bg-red-100 text-red-800' :
+                              analysis.priority === 'Высокий' ? 'bg-yellow-100 text-yellow-800' :
+                              analysis.priority === 'Средний' ? 'bg-blue-100 text-blue-800' :
                               'bg-gray-100 text-gray-800'
                             }`}>
-                              {item.priority}
+                              {analysis.priority}
                             </span>
                           </td>
                           <td className="p-2 text-xs max-w-xs truncate" title={item.strategy}>
@@ -767,7 +767,7 @@ const Charts: React.FC<ChartsProps> = ({ analytics }) => {
                                     <span>Выручка: {item.revenue.toLocaleString('ru-RU')} ₽</span>
                                     <span>Коэф. вариации: {item.coefficient_variation.toFixed(1)}%</span>
                                     <span>Категория: {item.combined_category}</span>
-                                    <span>Приоритет: {item.priority}</span>
+                                    <span>Приоритет: {analysis.priority}</span>
                                   </div>
                                 </div>
                               </div>
