@@ -179,7 +179,7 @@ const Charts: React.FC<ChartsProps> = ({ analytics }) => {
       'AY': {
         icon: <Clock className="w-5 h-5 text-yellow-600" />,
         title: 'Важные товары - сезонное планирование',
-        priority: revenue > 40000 ? 'Критический' : 'Высокий', // Исправлено: теперь приоритет зависит от выручки
+        priority: revenue > 40000 ? 'Критический' : 'Критический', // Исправлено: теперь приоритет зависит от выручки
         color: 'bg-yellow-50 border-yellow-200',
         reasons: [
           'Высокая доля в выручке, но сезонный характер спроса',
