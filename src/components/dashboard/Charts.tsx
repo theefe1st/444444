@@ -151,8 +151,6 @@ const Charts: React.FC<ChartsProps> = ({ analytics }) => {
       // Предполагаемые импорты для иконок. Убедитесь, что они соответствуют вашим.
 // import { Target, Clock, AlertTriangle, TrendingUp } from '@heroicons/react/24/outline';
 
-const getStrategyAnalysis = (category: string, revenue: number, coefficientVariation: number) => {
-  const analysis = {
     'AX': {
       icon: <Target className="w-5 h-5 text-green-600" />,
       title: 'Ключевые товары - постоянный контроль',
