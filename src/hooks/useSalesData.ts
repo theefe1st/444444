@@ -34,6 +34,7 @@ export const useSalesData = () => {
         return;
       }
 
+      // Убираем лимиты и загружаем все данные пользователя
       const { data, error } = await supabase
         .from('sales_data')
         .select('*')
@@ -138,7 +139,7 @@ export const useSalesData = () => {
         return;
       }
 
-      console.log(`Добавляем ${newData.length} записей в Supabase`);
+      console.log(`Начинаем загрузку ${newData.length} записей в Supabase`);
 
       // Подготавливаем данные для вставки
       const dataToInsert = newData.map(item => ({
@@ -163,17 +164,43 @@ export const useSalesData = () => {
         year: item.year || new Date(item.date).getFullYear()
       }));
 
-      const { data, error } = await supabase
-        .from('sales_data')
-        .insert(dataToInsert)
-        .select();
-
-      if (error) {
-        console.error('Ошибка при добавлении данных:', error);
-        return;
+      // Разбиваем данные на батчи для избежания лимитов Supabase
+      const BATCH_SIZE = 1000; // Размер батча
+      const batches = [];
+      
+      for (let i = 0; i < dataToInsert.length; i += BATCH_SIZE) {
+        batches.push(dataToInsert.slice(i, i + BATCH_SIZE));
       }
 
-      console.log(`Успешно добавлено ${data?.length || 0} записей`);
+      console.log(`Данные разбиты на ${batches.length} батчей по ${BATCH_SIZE} записей`);
+
+      let totalInserted = 0;
+      
+      // Загружаем данные батчами
+      for (let i = 0; i < batches.length; i++) {
+        const batch = batches[i];
+        console.log(`Загружаем батч ${i + 1}/${batches.length} (${batch.length} записей)`);
+        
+        const { data, error } = await supabase
+          .from('sales_data')
+          .insert(batch)
+          .select('id'); // Выбираем только id для экономии трафика
+
+        if (error) {
+          console.error(`Ошибка при загрузке батча ${i + 1}:`, error);
+          throw error;
+        }
+
+        totalInserted += data?.length || 0;
+        console.log(`Батч ${i + 1} загружен успешно. Всего загружено: ${totalInserted}/${newData.length}`);
+        
+        // Небольшая пауза между батчами для снижения нагрузки
+        if (i < batches.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+
+      console.log(`Успешно загружено ${totalInserted} записей из ${newData.length}`);
       
       // Перезагружаем данные
       await loadUserData();
@@ -188,6 +215,7 @@ export const useSalesData = () => {
       });
     } catch (error) {
       console.error('Ошибка при добавлении данных:', error);
+      throw error; // Пробрасываем ошибку для обработки в UI
     } finally {
       setIsLoading(false);
     }

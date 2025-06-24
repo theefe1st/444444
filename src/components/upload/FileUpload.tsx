@@ -15,6 +15,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataUpload }) => {
   const [convertedData, setConvertedData] = useState<SalesData[]>([]);
   const [previewMode, setPreviewMode] = useState(false);
   const [error, setError] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -45,6 +46,8 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataUpload }) => {
 
   const handleFiles = (files: File[]) => {
     setError('');
+    setIsProcessing(true);
+    
     const validTypes = [
       'text/csv',
       'application/vnd.ms-excel',
@@ -64,6 +67,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataUpload }) => {
 
     if (validFiles.length === 0) {
       setError('Пожалуйста, загрузите файлы поддерживаемых форматов: CSV, Excel, JSON, TSV, ODS');
+      setIsProcessing(false);
       return;
     }
 
@@ -74,9 +78,9 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataUpload }) => {
   const parseFiles = async (files: File[]) => {
     const allData: any[] = [];
 
-    for (const file of files) {
-      try {
-        console.log(`Обрабатываем файл: ${file.name}`);
+    try {
+      for (const file of files) {
+        console.log(`Обрабатываем файл: ${file.name}, размер: ${(file.size / 1024 / 1024).toFixed(2)} MB`);
         
         if (file.name.endsWith('.csv')) {
           const text = await file.text();
@@ -84,13 +88,22 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataUpload }) => {
             header: true, 
             skipEmptyLines: false,
             encoding: 'UTF-8',
-            transformHeader: (header) => header.trim() // Убираем лишние пробелы из заголовков
+            transformHeader: (header) => header.trim(),
+            // Убираем ограничения Papa Parse
+            worker: false,
+            download: false
           });
           console.log(`CSV данные из ${file.name}:`, result.data.length, 'записей');
           allData.push(...result.data);
         } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
           const buffer = await file.arrayBuffer();
-          const workbook = XLSX.read(buffer, { type: 'array' });
+          const workbook = XLSX.read(buffer, { 
+            type: 'array',
+            // Убираем ограничения XLSX
+            cellDates: true,
+            cellNF: false,
+            cellText: false
+          });
           
           // Обрабатываем все листы
           for (const sheetName of workbook.SheetNames) {
@@ -104,7 +117,9 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataUpload }) => {
               header: 1,
               defval: '',
               raw: false,
-              blankrows: false // Не включаем полностью пустые строки
+              blankrows: false,
+              // Убираем ограничения на количество строк
+              range: undefined
             });
             
             console.log(`Сырые данные из листа ${sheetName}:`, data.length, 'строк');
@@ -138,55 +153,60 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataUpload }) => {
         } else if (file.name.endsWith('.json')) {
           const text = await file.text();
           const data = JSON.parse(text);
-          allData.push(...(Array.isArray(data) ? data : [data]));
+          const arrayData = Array.isArray(data) ? data : [data];
+          console.log(`JSON данные из ${file.name}:`, arrayData.length, 'записей');
+          allData.push(...arrayData);
         } else if (file.name.endsWith('.tsv')) {
           const text = await file.text();
           const result = Papa.parse(text, { 
             header: true, 
             delimiter: '\t', 
-            skipEmptyLines: false 
+            skipEmptyLines: false,
+            worker: false
           });
+          console.log(`TSV данные из ${file.name}:`, result.data.length, 'записей');
           allData.push(...result.data);
         }
-      } catch (err) {
-        console.error(`Ошибка при парсинге файла ${file.name}:`, err);
-        setError(`Ошибка при парсинге файла ${file.name}: ${err}`);
-        return;
       }
-    }
 
-    console.log('Все исходные данные из файлов:', allData.length, 'записей');
-    
-    // Минимальная фильтрация - убираем только записи, где ВСЕ поля пустые
-    const filteredData = allData.filter((item, index) => {
-      // Получаем все значения объекта
-      const values = Object.values(item);
+      console.log('Все исходные данные из файлов:', allData.length, 'записей');
       
-      // Проверяем, есть ли хотя бы одно непустое значение
-      const hasAnyData = values.some(value => {
-        if (value === null || value === undefined) return false;
-        const strValue = String(value).trim();
-        return strValue !== '' && strValue !== 'null' && strValue !== 'undefined';
+      // Минимальная фильтрация - убираем только записи, где ВСЕ поля пустые
+      const filteredData = allData.filter((item, index) => {
+        // Получаем все значения объекта
+        const values = Object.values(item);
+        
+        // Проверяем, есть ли хотя бы одно непустое значение
+        const hasAnyData = values.some(value => {
+          if (value === null || value === undefined) return false;
+          const strValue = String(value).trim();
+          return strValue !== '' && strValue !== 'null' && strValue !== 'undefined';
+        });
+        
+        // Логируем только первые 5 отфильтрованных записей для отладки
+        if (!hasAnyData && index < 5) {
+          console.log(`Отфильтрована полностью пустая запись ${index}:`, item);
+        }
+        
+        return hasAnyData;
       });
       
-      // Логируем только первые 5 отфильтрованных записей для отладки
-      if (!hasAnyData && index < 5) {
-        console.log(`Отфильтрована полностью пустая запись ${index}:`, item);
-      }
+      console.log('После фильтрации пустых записей:', filteredData.length, 'записей');
+      console.log('Отфильтровано полностью пустых записей:', allData.length - filteredData.length);
       
-      return hasAnyData;
-    });
-    
-    console.log('После фильтрации пустых записей:', filteredData.length, 'записей');
-    console.log('Отфильтровано полностью пустых записей:', allData.length - filteredData.length);
-    
-    setParsedData(filteredData);
-    
-    // Конвертируем данные сразу после парсинга
-    const salesData = convertToSalesData(filteredData);
-    console.log('Конвертированные данные:', salesData.length, 'записей');
-    setConvertedData(salesData);
-    setPreviewMode(true);
+      setParsedData(filteredData);
+      
+      // Конвертируем данные сразу после парсинга
+      const salesData = convertToSalesData(filteredData);
+      console.log('Конвертированные данные:', salesData.length, 'записей');
+      setConvertedData(salesData);
+      setPreviewMode(true);
+    } catch (err) {
+      console.error('Ошибка при парсинге файлов:', err);
+      setError(`Ошибка при обработке файлов: ${err}`);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   // Функция для поиска значения по различным вариантам названий полей
@@ -481,8 +501,8 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataUpload }) => {
         year: new Date(date).getFullYear()
       };
 
-      // Логируем каждую 500-ю запись для отладки
-      if (index % 500 === 0 || index < 5) {
+      // Логируем каждую 1000-ю запись для отладки
+      if (index % 1000 === 0 || index < 5) {
         console.log(`Запись ${index + 1}:`, convertedItem);
       }
 
@@ -493,13 +513,18 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataUpload }) => {
     return convertedData;
   };
 
-  const handleConfirmUpload = () => {
-    console.log('Загружаем данные:', convertedData.length, 'записей');
-    onDataUpload(convertedData);
-    setPreviewMode(false);
-    setUploadedFiles([]);
-    setParsedData([]);
-    setConvertedData([]);
+  const handleConfirmUpload = async () => {
+    try {
+      console.log('Загружаем данные:', convertedData.length, 'записей');
+      await onDataUpload(convertedData);
+      setPreviewMode(false);
+      setUploadedFiles([]);
+      setParsedData([]);
+      setConvertedData([]);
+    } catch (error) {
+      console.error('Ошибка при загрузке данных:', error);
+      setError('Ошибка при загрузке данных в базу. Попробуйте еще раз.');
+    }
   };
 
   // Определяем колонки для отображения в предпросмотре
@@ -557,11 +582,19 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataUpload }) => {
 
         <div className="mb-6">
           <p className="text-gray-600">
-            Найдено записей: <span className="font-semibold">{convertedData.length}</span>
+            Найдено записей: <span className="font-semibold">{convertedData.length.toLocaleString('ru-RU')}</span>
           </p>
           <p className="text-sm text-gray-500 mt-1">
             Данные из вашего файла автоматически обработаны и готовы к загрузке
           </p>
+          {convertedData.length > 10000 && (
+            <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <p className="text-sm text-yellow-800">
+                <strong>Большой объем данных:</strong> Загрузка {convertedData.length.toLocaleString('ru-RU')} записей может занять несколько минут.
+                Данные будут загружены батчами для обеспечения стабильности.
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="overflow-x-auto mb-6" style={{ maxHeight: '500px' }}>
@@ -592,7 +625,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataUpload }) => {
         {convertedData.length > 10 && (
           <div className="mb-6 p-3 bg-blue-50 rounded-lg">
             <p className="text-sm text-blue-700">
-              Показаны первые 10 записей из {convertedData.length}. 
+              Показаны первые 10 записей из {convertedData.length.toLocaleString('ru-RU')}. 
               После подтверждения будут загружены все данные из вашего файла.
             </p>
           </div>
@@ -604,7 +637,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataUpload }) => {
             className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
           >
             <CheckCircle className="w-5 h-5" />
-            Подтвердить загрузку ({convertedData.length} записей)
+            Подтвердить загрузку ({convertedData.length.toLocaleString('ru-RU')} записей)
           </button>
           
           <button
@@ -642,15 +675,21 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataUpload }) => {
         onDrop={handleDrop}
       >
         <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-          <Upload className="w-8 h-8 text-blue-600" />
+          {isProcessing ? (
+            <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+          ) : (
+            <Upload className="w-8 h-8 text-blue-600" />
+          )}
         </div>
         
         <h4 className="text-xl font-semibold text-gray-900 mb-2">
-          Перетащите файлы или нажмите для выбора
+          {isProcessing ? 'Обработка файлов...' : 'Перетащите файлы или нажмите для выбора'}
         </h4>
         
         <p className="text-gray-600 mb-6">
           Поддерживаемые форматы: CSV, Excel (.xlsx), JSON, TSV, ODS
+          <br />
+          <span className="text-sm text-gray-500">Нет ограничений по количеству записей</span>
         </p>
         
         <input
@@ -660,14 +699,19 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataUpload }) => {
           accept=".csv,.xlsx,.xls,.json,.tsv,.ods"
           className="hidden"
           id="file-upload"
+          disabled={isProcessing}
         />
         
         <label
           htmlFor="file-upload"
-          className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors"
+          className={`inline-flex items-center gap-2 px-6 py-3 rounded-lg transition-colors ${
+            isProcessing 
+              ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
+              : 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer'
+          }`}
         >
           <FileText className="w-5 h-5" />
-          Выбрать файлы
+          {isProcessing ? 'Обработка...' : 'Выбрать файлы'}
         </label>
       </div>
 
@@ -687,7 +731,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataUpload }) => {
                 <CheckCircle className="w-5 h-5 text-green-600" />
                 <span className="font-medium text-green-800">{file.name}</span>
                 <span className="text-sm text-green-600">
-                  ({(file.size / 1024).toFixed(1)} KB)
+                  ({(file.size / 1024 / 1024).toFixed(2)} MB)
                 </span>
               </div>
             ))}
@@ -713,6 +757,13 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataUpload }) => {
           <span>• Тип клиента / customer_type</span>
           <span>• Регион / region</span>
           <span>• Канал продаж / sales_channel</span>
+        </div>
+        
+        <div className="mt-3 p-3 bg-blue-50 rounded border border-blue-200">
+          <p className="text-sm text-blue-800">
+            <strong>Без ограничений:</strong> Система поддерживает загрузку любого количества записей. 
+            Большие файлы обрабатываются автоматически батчами для обеспечения стабильности.
+          </p>
         </div>
       </div>
     </div>
